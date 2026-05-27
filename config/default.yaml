@@ -1,0 +1,62 @@
+# ZenOS Default Configuration
+# Auto-loaded on startup if no config file specified.
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  debug: false
+  cors_origins:
+    - "*"
+
+memory:
+  backend: "local"
+  max_working_memory: 100
+  max_episodic_memory: 1000
+  max_semantic_memory: 5000
+  compression_threshold: 0.8
+  vector_dimension: 1536
+  redis_url: "redis://localhost:6379"
+  qdrant_url: "http://localhost:6333"
+  auto_compress: true
+  cross_session_persistence: true
+
+agent:
+  max_iterations: 50
+  max_tool_calls: 100
+  timeout_seconds: 300
+  enable_planning: true
+  enable_reflection: true
+  enable_self_healing: true
+  adaptive_routing: true
+  model: "gpt-4o"
+  fallback_models:
+    - "gpt-4o-mini"
+    - "claude-3-5-sonnet"
+
+observability:
+  enable_metrics: true
+  enable_tracing: true
+  enable_alerting: true
+  metrics_port: 9090
+  tracing_endpoint: "http://localhost:4317"
+  log_level: "INFO"
+  alert_channels: []
+
+security:
+  enable_auth: true
+  jwt_secret: "change-me-in-production"
+  jwt_expiry_hours: 24
+  rate_limit_per_minute: 60
+  enable_audit_log: true
+  allowed_hosts:
+    - "*"
+
+infrastructure:
+  enable_caching: true
+  cache_ttl_seconds: 300
+  cache_max_size: 10000
+  enable_scheduling: true
+  enable_messaging: true
+  message_queue_url: "redis://localhost:6379/1"
+  predictive_scheduling: true
