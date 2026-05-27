@@ -110,7 +110,9 @@ User Request
          Response to User
 ```
 
-## Memory Architecture (3-Tier + Graph)
+## Memory Architecture (3-Tier In-Memory + 4-Tier Production)
+
+### Three-Tier (Current, In-Memory)
 
 ```
                     ┌──────────────────┐
@@ -145,26 +147,69 @@ User Request
                    └──────────────┘
 ```
 
+### Four-Tier (Production, Distributed)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    FourTierMemoryManager                             │
+│                                                                     │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐     │
+│  │  Redis   │    │PostgreSQL│    │  Qdrant  │    │  S3/R2   │     │
+│  │ (Tier 1) │    │ (Tier 2) │    │ (Tier 3) │    │ (Tier 4) │     │
+│  │          │    │          │    │          │    │          │     │
+│  │• Session │    │• Episodes│    │• Vectors │    │• Backups │     │
+│  │  state   │    │• Tool log│    │• Semantic│    │• Archives│     │
+│  │• Context │    │• Tags    │    │  search  │    │• Snapshots│    │
+│  │  cache   │    │• Full-text│   │• Cluster │    │• Cold    │     │
+│  │• Pub/sub │    │  search  │    │  index   │    │  storage │     │
+│  │• Counters│    │• Temporal│    │          │    │          │     │
+│  │          │    │  queries │    │          │    │          │     │
+│  └────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘     │
+│       │               │               │               │            │
+│       └───────────────┴───────────────┴───────────────┘            │
+│                              │                                      │
+│                   Unified Write/Read Path                           │
+└─────────────────────────────────────────────────────────────────────┘
+
+Write Path:
+  Agent Action → Redis (immediate) → PG (persist) → Qdrant (embed) → S3 (backup)
+
+Read Path:
+  Query → Redis (cache check) → PG (structured) → Qdrant (vector) → Merge & Rank
+```
+
 ### Memory Data Flow
 
 ```
 New Information
       │
       ▼
-Working Memory (immediate, fast)
-      │ (TTL expire / LRU evict)
+Redis Working Memory (immediate, <1ms)
+      │ (async write-behind)
       ▼
-Episodic Memory (experience log, time-indexed)
-      │ (compression: low-importance pruned)
+PostgreSQL Episodic Memory (structured, ~5ms)
+      │ (embedding generation)
       ▼
-Semantic Memory (knowledge base, searchable)
-      │ (MemoryGraph builds relationships)
+Qdrant Semantic Memory (vector index, ~10ms)
+      │ (periodic backup)
       ▼
-MemoryGraph (knowledge graph, community clusters)
-      │
-      ▼
-Persistence (JSON on disk, cross-session)
+S3 Cold Storage (archive, async)
 ```
+
+### Three-Tier vs Four-Tier Comparison
+
+| Aspect | Three-Tier (Current) | Four-Tier (Production) |
+|--------|---------------------|----------------------|
+| **Working** | In-memory LRU | Redis (distributed, persistent) |
+| **Episodic** | JSON files | PostgreSQL (SQL queries, full-text search) |
+| **Semantic** | In-memory vectors | Qdrant (ANN indexing, billion-scale) |
+| **Backup** | Manual JSON | S3 (automated, compressed, versioned) |
+| **Scale** | Single machine | Distributed, multi-node |
+| **Query** | Keyword + temporal | SQL + vector + hybrid |
+| **Persistence** | File-based | Transactional + replicated |
+| **Complexity** | Low | Higher (requires infra) |
+
+**Recommendation**: Use Three-Tier for development/single-agent. Use Four-Tier for production/multi-agent deployments.
 
 ## Core Modules & Sub-Modules
 
