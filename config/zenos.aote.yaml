@@ -1,0 +1,144 @@
+# ZenOS Configuration - aote-hk-cn2
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 2
+  log_level: "info"
+
+orchestrator:
+  max_retries: 3
+  timeout: 120
+  checkpoint_interval: 5
+  default_workflow: "agent_loop"
+
+model_router:
+  default_model: "LongCat-2.0-Preview"
+  fallback_chain:
+    - "LongCat-2.0-Preview"
+    - "deepseek-chat"
+  cost_aware: true
+  latency_aware: true
+  providers:
+    longcat:
+      base_url: "${LONGCAT_BASE_URL}"
+      api_key_env: "LONGCAT_API_KEY"
+      models:
+        - name: "LongCat-2.0-Preview"
+          context_window: 131072
+          supports_tools: true
+          supports_vision: false
+        - name: "LongCat-2.0-Thinking"
+          context_window: 131072
+          supports_tools: true
+          supports_vision: false
+    openai:
+      base_url: "https://api.openai.com/v1"
+      api_key_env: "OPENAI_API_KEY"
+      models:
+        - name: "gpt-4o"
+          context_window: 128000
+          supports_tools: true
+          supports_vision: true
+    deepseek:
+      base_url: "https://api.deepseek.com/v1"
+      api_key_env: "DEEPSEEK_API_KEY"
+      models:
+        - name: "deepseek-chat"
+          context_window: 65536
+          supports_tools: true
+
+memory:
+  working:
+    backend: "redis"
+    url: "${REDIS_URL}"
+    ttl: 3600
+  episodic:
+    backend: "postgres"
+    url: "${DATABASE_URL}"
+  semantic:
+    backend: "qdrant"
+    url: "${QDRANT_URL}"
+    api_key: "${QDRANT_API_KEY}"
+    vector_size: 384
+  artifact:
+    backend: "minio"
+    endpoint: "${MINIO_ENDPOINT}"
+    access_key: "${MINIO_ACCESS_KEY}"
+    secret_key: "${MINIO_SECRET_KEY}"
+    bucket: "${MINIO_BUCKET}"
+
+telegram:
+  bot_token: "${TELEGRAM_BOT_TOKEN}"
+  allowed_users: "${TELEGRAM_ALLOWED_USERS}"
+  bot_name: "${TELEGRAM_BOT_NAME}"
+
+agent:
+  name: "ZenOS-aote"
+  persona: "你是 ZenOS，一个 Agent Operating System。你运行在 aote-hk-cn2 节点上。你的核心能力包括：状态机编排、智能模型路由、四层记忆系统、MCP 工具总线、策略引擎、多节点执行。"
+  system_prompt: |
+    你是 ZenOS Agent Operating System。
+
+    核心原则：
+    1. 状态驱动 - 每个任务都通过状态机流转：IDLE→PLANNING→EXECUTING→REVIEWING→DONE/FAILED
+    2. 记忆优先 - 先查记忆再执行，执行后更新记忆
+    3. 工具隔离 - 所有外部操作通过 MCP 工具总线
+    4. 安全第一 - 危险操作需要确认
+    5. 简洁汇报 - 结果导向，不要冗余
+
+    当前节点：aote-hk-cn2 (103.149.93.192)
+    主模型：LongCat-2.0-Preview via api.longcat.chat
+
+mcp:
+  servers:
+    - name: "filesystem"
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/opt/zenos"]
+    - name: "git"
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-git"]
+    - name: "github"
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-github"]
+      env:
+        GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+security:
+  jwt_secret: "${JWT_SECRET}"
+  rate_limit: 100
+  tool_permissions:
+    default: "log"
+    dangerous_require_approval:
+      - "rm_file"
+      - "systemctl"
+      - "iptables"
+      - "docker_rm"
+      - "reboot"
+    denied:
+      - "rm_rf_root"
+      - "format_disk"
+
+observability:
+  prometheus:
+    enabled: true
+    port: 9090
+  grafana:
+    enabled: true
+    port: 3000
+  loki:
+    enabled: true
+    url: "http://localhost:3100"
+
+nodes:
+  - name: "aote-hk-cn2"
+    host: "103.149.93.192"
+    role: "orchestrator"
+    capabilities: ["llm", "memory", "tools"]
+  - name: "oracle-arm"
+    host: "167.234.220.17"
+    role: "executor"
+    capabilities: ["docker", "browser", "monitoring"]
+  - name: "delux18"
+    host: "148.135.207.14"
+    role: "executor"
+    capabilities: ["docker", "ai", "search"]
