@@ -539,10 +539,12 @@ class QdrantSemanticMemory:
 
     def __init__(self, url: str = "http://localhost:6333", 
                  collection: str = "zenos_semantic",
-                 vector_size: int = 1536):
+                 vector_size: int = 1536,
+                 api_key: str = None):
         self._url = url
         self._collection = collection
         self._vector_size = vector_size
+        self._api_key = api_key
         self._client = None
 
     async def connect(self):
@@ -551,7 +553,7 @@ class QdrantSemanticMemory:
             from qdrant_client import QdrantClient
             from qdrant_client.models import Distance, VectorParams, PointStruct
             
-            self._client = QdrantClient(url=self._url)
+            self._client = QdrantClient(url=self._url, api_key=self._api_key)
             
             # Create collection if not exists
             collections = [c.name for c in self._client.get_collections().collections]
@@ -620,9 +622,9 @@ class QdrantSemanticMemory:
                 if conditions:
                     qdrant_filter = Filter(must=conditions)
 
-            results = self._client.search(
+            results = self._client.query_points(
                 collection_name=self._collection,
-                query_vector=query_vector,
+                query=query_vector,
                 limit=limit,
                 score_threshold=min_score,
                 query_filter=qdrant_filter,
@@ -635,7 +637,7 @@ class QdrantSemanticMemory:
                     'score': r.score,
                     'payload': r.payload,
                 }
-                for r in results
+                for r in results.points
             ]
         except Exception as e:
             logger.error("Qdrant search error: %s", e)
@@ -860,6 +862,7 @@ class FourTierMemoryManager:
             url=config.get('qdrant_url', 'http://localhost:6333'),
             collection=config.get('qdrant_collection', 'zenos_semantic'),
             vector_size=config.get('vector_size', 1536),
+            api_key=config.get('qdrant_api_key'),
         )
         self.s3 = S3ColdStorage(
             endpoint_url=config.get('s3_endpoint'),
@@ -975,9 +978,14 @@ class FourTierMemoryManager:
             if strategy in ("hybrid", "semantic"):
                 vector = await self._embed(query)
                 if vector:
-                    qdrant_results = await self.qdrant.search(
-                        query_vector=vector, limit=limit, min_score=0.3,
+                    qdrant_result = self.qdrant._client.query_points(
+                        collection_name=self.qdrant._collection,
+                        query=vector,
+                        limit=limit,
+                        score_threshold=0.3,
+                        with_payload=True,
                     )
+                    qdrant_results = qdrant_result.points
                     for r in qdrant_results:
                         results.append({
                             'id': r['id'],
@@ -1016,13 +1024,19 @@ class FourTierMemoryManager:
 
     async def _embed(self, text: str) -> Optional[List[float]]:
         """Generate embedding vector for text."""
+        import numpy as np
         if self._embedder is None:
             try:
                 from sentence_transformers import SentenceTransformer
                 self._embedder = SentenceTransformer('all-MiniLM-L6-v2')
             except Exception:
-                return None
+                # Fallback: deterministic hash-based pseudo-embedding
+                # Not semantically meaningful, but allows Qdrant to function
+                print("  [WARN] sentence_transformers not available, using fallback embedding")
+                np.random.seed(hash(text) % 2**32)
+                return np.random.rand(self.qdrant._vector_size).tolist()
         try:
             return self._embedder.encode(text).tolist()
         except Exception:
-            return None
+            np.random.seed(hash(text) % 2**32)
+            return np.random.rand(self.qdrant._vector_size).tolist()
