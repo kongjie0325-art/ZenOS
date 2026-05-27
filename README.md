@@ -110,9 +110,40 @@ User Request
          Response to User
 ```
 
-## Memory Architecture (3-Tier In-Memory + 4-Tier Production)
+## Memory Architecture
 
-### Three-Tier (Current, In-Memory)
+### Four-Tier Production Memory (Deployed & Tested)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    FourTierMemoryManager                             │
+│                                                                     │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐     │
+│  │  Redis   │    │PostgreSQL│    │  Qdrant  │    │  S3/R2   │     │
+│  │ (Tier 1) │    │ (Tier 2) │    │ (Tier 3) │    │ (Tier 4) │     │
+│  │          │    │          │    │          │    │          │     │
+│  │• Session │    │• Episodes│    │• Vectors │    │• Backups │     │
+│  │  state   │    │• Tool log│    │• Semantic│    │• Archives│     │
+│  │• Context │    │• Tags    │    │  search  │    │•Snapshots│     │
+│  │  cache   │    │• Full-text│   │• Cluster │    │• Cold    │     │
+│  │• Pub/sub │    │  search  │    │  index   │    │  storage │     │
+│  │• Counters│    │• Temporal│    │          │    │          │     │
+│  │          │    │  queries │    │          │    │          │     │
+│  └────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘     │
+│       │               │               │               │            │
+│       └───────────────┴───────────────┴───────────────┘            │
+│                              │                                      │
+│                   Unified Write/Read Path                           │
+└─────────────────────────────────────────────────────────────────────┘
+
+Write Path:
+  Agent Action → Redis (immediate, <1ms) → PG (persist, ~5ms) → Qdrant (embed, ~10ms) → S3 (backup, async)
+
+Read Path:
+  Query → Redis (cache check) → PG (structured query) → Qdrant (vector search) → Merge & Rank
+```
+
+### Three-Tier Development Memory (In-Memory)
 
 ```
                     ┌──────────────────┐
@@ -147,233 +178,214 @@ User Request
                    └──────────────┘
 ```
 
-### Four-Tier (Production, Distributed)
+### Comparison
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    FourTierMemoryManager                             │
-│                                                                     │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐     │
-│  │  Redis   │    │PostgreSQL│    │  Qdrant  │    │  S3/R2   │     │
-│  │ (Tier 1) │    │ (Tier 2) │    │ (Tier 3) │    │ (Tier 4) │     │
-│  │          │    │          │    │          │    │          │     │
-│  │• Session │    │• Episodes│    │• Vectors │    │• Backups │     │
-│  │  state   │    │• Tool log│    │• Semantic│    │• Archives│     │
-│  │• Context │    │• Tags    │    │  search  │    │• Snapshots│    │
-│  │  cache   │    │• Full-text│   │• Cluster │    │• Cold    │     │
-│  │• Pub/sub │    │  search  │    │  index   │    │  storage │     │
-│  │• Counters│    │• Temporal│    │          │    │          │     │
-│  │          │    │  queries │    │          │    │          │     │
-│  └────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘     │
-│       │               │               │               │            │
-│       └───────────────┴───────────────┴───────────────┘            │
-│                              │                                      │
-│                   Unified Write/Read Path                           │
-└─────────────────────────────────────────────────────────────────────┘
-
-Write Path:
-  Agent Action → Redis (immediate) → PG (persist) → Qdrant (embed) → S3 (backup)
-
-Read Path:
-  Query → Redis (cache check) → PG (structured) → Qdrant (vector) → Merge & Rank
-```
-
-### Memory Data Flow
-
-```
-New Information
-      │
-      ▼
-Redis Working Memory (immediate, <1ms)
-      │ (async write-behind)
-      ▼
-PostgreSQL Episodic Memory (structured, ~5ms)
-      │ (embedding generation)
-      ▼
-Qdrant Semantic Memory (vector index, ~10ms)
-      │ (periodic backup)
-      ▼
-S3 Cold Storage (archive, async)
-```
-
-### Three-Tier vs Four-Tier Comparison
-
-| Aspect | Three-Tier (Current) | Four-Tier (Production) |
-|--------|---------------------|----------------------|
+| Aspect | Three-Tier (Dev) | Four-Tier (Production) |
+|--------|-----------------|----------------------|
 | **Working** | In-memory LRU | Redis (distributed, persistent) |
-| **Episodic** | JSON files | PostgreSQL (SQL queries, full-text search) |
-| **Semantic** | In-memory vectors | Qdrant (ANN indexing, billion-scale) |
+| **Episodic** | JSON files | PostgreSQL (SQL, full-text search) |
+| **Semantic** | In-memory vectors | Qdrant (ANN, billion-scale) |
 | **Backup** | Manual JSON | S3 (automated, compressed, versioned) |
 | **Scale** | Single machine | Distributed, multi-node |
 | **Query** | Keyword + temporal | SQL + vector + hybrid |
 | **Persistence** | File-based | Transactional + replicated |
 | **Complexity** | Low | Higher (requires infra) |
 
-**Recommendation**: Use Three-Tier for development/single-agent. Use Four-Tier for production/multi-agent deployments.
-
 ## Core Modules & Sub-Modules
 
 ### Core Layer (`core/`)
 | Module | Class | Purpose |
 |--------|-------|---------|
-| `config.py` | `Config`, `ServerConfig`, `MemoryConfig`, ... | Configuration management (YAML/JSON/Env, hot-reload) |
-| `events.py` | `EventBus`, `Event`, `EventType` | Async pub/sub event bus (priority, wildcard, history) |
-| `context.py` | `Context`, `ContextManager` | Conversation context (messages, token budget, compression) |
-| `plugin.py` | `PluginManager`, `Plugin`, `PluginType` | Plugin lifecycle (discovery, loading, hooks) |
-| `registry.py` | `Registry` | Service locator / DI container (singleton, factory) |
-| `state.py` | `StateManager`, `SystemState` | State machine (validated transitions, snapshots) |
+| `config.py` | `Config`, `ServerConfig`, `MemoryConfig` | Configuration (YAML/JSON/Env, hot-reload) |
+| `events.py` | `EventBus`, `Event`, `EventType` | Async pub/sub event bus |
+| `context.py` | `Context`, `ContextManager` | Conversation context management |
+| `plugin.py` | `PluginManager`, `Plugin`, `PluginType` | Plugin lifecycle |
+| `registry.py` | `Registry` | Service locator / DI container |
+| `state.py` | `StateManager`, `SystemState` | State machine |
 
 ### Memory Layer (`memory/`)
 | Module | Class | Purpose |
 |--------|-------|---------|
-| `working.py` | `WorkingMemory`, `WorkingMemoryEntry` | Short-term LRU cache with TTL |
-| `episodic.py` | `EpisodicMemory`, `Episode` | Medium-term experience log with temporal index |
-| `semantic.py` | `SemanticMemory`, `Knowledge` | Long-term knowledge base with vector search |
-| `procedural.py` | `ProceduralMemory`, `Skill` | Skill/procedure registry with execution tracking |
-| `compression.py` | `MemoryCompressor`, `CompressionStrategy` | Memory compression (summarize/prune/consolidate) |
-| `retrieval.py` | `MemoryRetriever`, `RetrievalStrategy` | Multi-strategy retrieval (keyword/semantic/temporal/hybrid) |
-| `memory_graph.py` | `MemoryGraph`, `GraphNode`, `GraphEdge` | Knowledge graph (traversal, communities) |
-| `storage/memory_store.py` | `MemoryStore`, `LocalMemoryStore` | Storage backends (local JSON, Redis, Qdrant) |
+| `working.py` | `WorkingMemory` | Short-term LRU cache with TTL |
+| `episodic.py` | `EpisodicMemory`, `Episode` | Medium-term experience log |
+| `semantic.py` | `SemanticMemory`, `Knowledge` | Long-term knowledge base |
+| `procedural.py` | `ProceduralMemory`, `Skill` | Skill/procedure registry |
+| `compression.py` | `MemoryCompressor` | Memory compression strategies |
+| `retrieval.py` | `MemoryRetriever` | Multi-strategy retrieval |
+| `memory_graph.py` | `MemoryGraph` | Knowledge graph |
+| `four_tier.py` | `FourTierMemoryManager` | Production 4-tier orchestration |
+| `four_tier_config.py` | Connection config | Tier connection configuration |
+| `storage/` | `MemoryStore`, backends | Storage backend abstractions |
 
 ### Agent Layer (`agent/`)
 | Module | Class | Purpose |
 |--------|-------|---------|
-| `base.py` | `BaseAgent`, `AgentContext`, `ToolDefinition` | Think-act-observe loop base |
-| `concrete.py` | `ConcreteAgent` | Full agent with event/memory/metrics integration |
-| `adaptive_router.py` | `AdaptiveRouter`, `StrategyStats` | Multi-armed bandit task routing |
-| `self_healing.py` | `SelfHealingEngine`, `RecoveryStrategy` | Failure detection + recovery |
-| `planning/planner.py` | `TaskPlanner` | Goal decomposition + task scheduling |
-| `planning/task.py` | `Task`, `TaskStatus`, `TaskPriority` | Task data model |
-| `reasoning/chain.py` | `ChainOfThought`, `ThoughtStep` | Chain-of-thought reasoning |
-| `reasoning/reflection.py` | `Reflection`, `Critique` | Self-reflection and improvement |
-| `execution/executor.py` | `Executor`, `ExecutionResult` | Tool execution (retry, batch, safety) |
-| `execution/safety.py` | `SafetyChecker`, `SafetyRule` | Input/output validation |
+| `base.py` | `BaseAgent` | Think-act-observe loop base |
+| `concrete.py` | `ConcreteAgent` | Full agent with all integrations |
+| `adaptive_router.py` | `AdaptiveRouter` | Multi-armed bandit routing |
+| `self_healing.py` | `SelfHealingEngine` | Failure recovery |
+| `planning/planner.py` | `TaskPlanner` | Goal decomposition |
+| `reasoning/chain.py` | `ChainOfThought` | Chain-of-thought reasoning |
+| `reasoning/reflection.py` | `Reflection` | Self-reflection |
+| `execution/executor.py` | `Executor` | Tool execution |
+| `execution/safety.py` | `SafetyChecker` | Input/output validation |
 
 ### Tools Layer (`tools/`)
 | Module | Class | Purpose |
 |--------|-------|---------|
-| `base.py` | `BaseTool`, `ToolResult`, `ToolParameter` | Tool base class + schema |
-| `builtin/web_search.py` | `WebSearchTool` | Web search (DuckDuckGo HTML) |
-| `builtin/file_ops.py` | `FileReadTool`, `FileWriteTool`, `FileListTool` | File operations |
-| `builtin/shell.py` | `ShellTool` | Shell command execution |
+| `base.py` | `BaseTool`, `ToolResult` | Tool base class |
+| `builtin/web_search.py` | `WebSearchTool` | Web search |
+| `builtin/file_ops.py` | `FileReadTool`, `FileWriteTool` | File operations |
+| `builtin/shell.py` | `ShellTool` | Shell commands |
 | `builtin/http.py` | `HTTPTool` | HTTP API calls |
 | `adapters/adapter.py` | `ToolAdapter` | External tool wrapper |
-| `custom/loader.py` | `CustomToolLoader` | Load tools from YAML/JSON definitions |
+| `custom/loader.py` | `CustomToolLoader` | YAML/JSON tool loader |
 
 ### Infrastructure Layer (`infrastructure/`)
 | Module | Class | Purpose |
 |--------|-------|---------|
-| `scheduling/scheduler.py` | `TaskScheduler` | Cron/interval/one-shot task scheduling |
-| `scheduling/jobs.py` | `Job`, `JobStatus`, `JobPriority` | Job data model |
-| `caching/cache.py` | `MultiTierCache`, `CacheStrategy` | L1 LRU + L2 TTL cache |
+| `scheduling/scheduler.py` | `TaskScheduler` | Cron/interval/one-shot scheduling |
+| `caching/cache.py` | `MultiTierCache` | L1 LRU + L2 TTL cache |
 | `caching/predictive.py` | `PredictivePrefetcher` | Pattern-based prefetch |
-| `auto_scaler.py` | `AutoScaler`, `ScalingPolicy` | Metric-driven auto-scaling |
+| `auto_scaler.py` | `AutoScaler` | Metric-driven auto-scaling |
 | `messaging/broker.py` | `MessageBroker` | Pub/sub message broker |
 | `messaging/queue.py` | `PriorityMessageQueue` | Priority message queue |
 
 ### Observability Layer (`observability/`)
 | Module | Class | Purpose |
 |--------|-------|---------|
-| `metrics/collector.py` | `MetricsCollector`, `MetricType` | Counters, gauges, histograms |
-| `tracing/tracer.py` | `Tracer`, `Span`, `SpanStatus` | Distributed tracing |
-| `alerting/alerter.py` | `AlertManager`, `AlertRule`, `AlertSeverity` | Rule-based alerting |
+| `metrics/collector.py` | `MetricsCollector` | Counters, gauges, histograms |
+| `tracing/tracer.py` | `Tracer`, `Span` | Distributed tracing |
+| `alerting/alerter.py` | `AlertManager` | Rule-based alerting |
 
 ### Security Layer (`security/`)
 | Module | Class | Purpose |
 |--------|-------|---------|
-| `auth.py` | `AuthManager`, `JWTConfig` | JWT authentication (pure Python) |
-| `audit.py` | `AuditLogger`, `AuditEvent` | Immutable audit trail |
-| `sandbox.py` | `Sandbox`, `SandboxConfig` | Sandboxed execution (memory/CPU limits) |
+| `auth.py` | `AuthManager` | JWT authentication |
+| `audit.py` | `AuditLogger` | Immutable audit trail |
+| `sandbox.py` | `Sandbox` | Sandboxed execution |
 
 ### Integration Layer (`integration/`)
 | Module | Class | Purpose |
 |--------|-------|---------|
-| `memory_bridge.py` | `MemoryBridge` | Connects Agent ↔ Memory (persistence, compression, decay) |
-| `event_wiring.py` | `EventWiring` | Connects EventBus ↔ Observability (metrics, traces, alerts) |
+| `memory_bridge.py` | `MemoryBridge` | Agent ↔ Memory bridge |
+| `event_wiring.py` | `EventWiring` | EventBus ↔ Observability wiring |
 
 ### API Layer (`api/`)
 | Module | Class | Purpose |
 |--------|-------|---------|
-| `routes/agent.py` | `AgentRouter` | Agent CRUD + run endpoints |
-| `routes/memory.py` | `MemoryRouter` | Memory search/add/delete/compress |
-| `routes/tools.py` | `ToolsRouter` | Tool list/execute/register |
-| `routes/system.py` | `SystemRouter` | Health/config/metrics |
+| `routes/agent.py` | `AgentRouter` | Agent endpoints |
+| `routes/memory.py` | `MemoryRouter` | Memory endpoints |
+| `routes/tools.py` | `ToolsRouter` | Tool endpoints |
+| `routes/system.py` | `SystemRouter` | System endpoints |
 | `middleware/auth.py` | `AuthMiddleware` | JWT validation |
-| `middleware/rate_limit.py` | `RateLimitMiddleware` | Token bucket rate limiting |
-| `middleware/logging.py` | `LoggingMiddleware` | Request/response logging |
-| `schemas/agent.py` | `AgentRunRequest`, `AgentRunResponse` | Agent API schemas |
-| `schemas/memory.py` | `MemorySearchRequest`, `MemorySearchResponse` | Memory API schemas |
-
-### Models Layer (`models/`)
-| Module | Class | Purpose |
-|--------|-------|---------|
-| `agent.py` | `AgentModel`, `AgentRunRequest`, ... | Agent data models |
-| `memory.py` | `MemoryEntryModel`, `MemorySearchRequest`, ... | Memory data models |
-| `events.py` | `EventModel`, `EventBatch`, `EventFilter` | Event data models |
+| `middleware/rate_limit.py` | `RateLimitMiddleware` | Rate limiting |
+| `middleware/logging.py` | `LoggingMiddleware` | Request logging |
 
 ## Event Flow Reference
 
 | Event Type | Publisher | Subscribers | Effect |
 |------------|-----------|-------------|--------|
 | `SYSTEM_STARTUP` | ZenOS | EventWiring | Initialize all subsystems |
-| `AGENT_START` | ConcreteAgent | Tracer, Metrics | Start trace span, increment counter |
-| `AGENT_THINK` | ConcreteAgent | Tracer, Metrics | Record thought in span |
-| `AGENT_ACT` | ConcreteAgent | Tracer, Metrics, Safety | Execute tool, record result |
+| `AGENT_START` | ConcreteAgent | Tracer, Metrics | Start trace span |
+| `AGENT_THINK` | ConcreteAgent | Tracer, Metrics | Record thought |
+| `AGENT_ACT` | ConcreteAgent | Tracer, Metrics, Safety | Execute tool |
 | `AGENT_OBSERVE` | ConcreteAgent | Tracer, Metrics, Memory | Write to episodic memory |
-| `AGENT_REFLECT` | ConcreteAgent | Tracer, Metrics | Self-reflection critique |
+| `AGENT_REFLECT` | ConcreteAgent | Tracer, Metrics | Self-reflection |
 | `AGENT_COMPLETE` | ConcreteAgent | Tracer, MemoryBridge | End span, trigger compression |
-| `AGENT_ERROR` | ConcreteAgent | Tracer, AlertManager | End span with error, trigger alert |
-| `TOOL_CALL` | Executor | Metrics, Safety | Validate input, count call |
-| `TOOL_RESULT` | Executor | Metrics, Safety | Validate output, count result |
-| `TOOL_ERROR` | Executor | Metrics, AlertManager | Count error, trigger alert |
-| `MEMORY_WRITE` | MemoryBridge | EventWiring | Check compression threshold |
-| `MEMORY_COMPRESS` | MemoryBridge | Metrics | Record compression stats |
-| `SYSTEM_ERROR` | Any | AlertManager | Trigger alert |
+| `AGENT_ERROR` | ConcreteAgent | Tracer, AlertManager | End span with error |
+| `TOOL_CALL` | Executor | Metrics, Safety | Validate input |
+| `TOOL_RESULT` | Executor | Metrics, Safety | Validate output |
+| `MEMORY_WRITE` | MemoryBridge | EventWiring | Check compression |
+| `MEMORY_COMPRESS` | MemoryBridge | Metrics | Record stats |
 
 ## Key Design Decisions
 
 ### 1. Event-Driven Architecture
-Every significant action publishes an event. Subscribers (observability, memory, alerting) react asynchronously. This decouples modules and enables:
-- Real-time metrics without polluting business logic
-- Automatic memory compression triggered by write patterns
-- Alerting on error patterns without try/catch everywhere
+Every significant action publishes an event. Subscribers react asynchronously. This decouples modules and enables real-time metrics, automatic memory compression, and pattern-based alerting.
 
-### 2. Three-Tier Memory
-- **Working**: Ephemeral, session-scoped, fast (LRU + TTL)
-- **Episodic**: Experience log, time-indexed, searchable by keyword
-- **Semantic**: Knowledge base, searchable by vector similarity, persisted to disk
-
-Each tier has different retention, compression, and retrieval strategies. Information flows from working → episodic → semantic as it ages and proves valuable.
+### 2. Four-Tier Memory
+- **Tier 1 (Redis)**: Ephemeral session state, real-time counters, pub/sub
+- **Tier 2 (PostgreSQL)**: Structured episodes, full-text search, tool logs
+- **Tier 3 (Qdrant)**: Vector similarity search, semantic retrieval
+- **Tier 4 (S3/MinIO)**: Backups, archives, cold storage
 
 ### 3. Adaptive Routing
-Tasks are routed to strategies (direct/chain/plan/reflect) using a multi-armed bandit algorithm. The router learns which strategy works best for each task type based on observed outcomes.
+Multi-armed bandit algorithm learns which strategy (direct/chain/plan/reflect) works best for each task type.
 
 ### 4. Self-Healing
-Tool failures trigger automatic recovery: retry with simplified params → fallback tool → task decomposition → skip and continue. Recovery strategies are ranked by historical success rate.
+Automatic recovery: retry simplified → fallback tool → task decomposition → skip and continue.
 
 ### 5. Memory Graph
-Semantic memories are connected in a knowledge graph. Graph traversal enables context expansion (find related memories), and community detection clusters related knowledge.
+Semantic memories connected in a knowledge graph for context expansion and community detection.
 
-## Quick Start
+## Deployment
+
+### Production (aote-hk-cn2)
 
 ```bash
-# Install dependencies
-pip install pyyaml
+# Infrastructure (Docker)
+docker run -d --name zenos-redis -p 6379:6379 redis:7-alpine
+docker run -d --name zenos-postgres -p 5432:5432 -e POSTGRES_USER=zenos -e POSTGRES_PASSWORD=zenos -e POSTGRES_DB=zenos postgres:16-alpine
+docker run -d --name zenos-qdrant -p 6333:6333 -e QDRANT__SERVICE__API_KEY=qdrant_hermes_2026_secure_key qdrant/qdrant:v1.18
+docker run -d --name zenos-minio -p 9000-9001:9000-9001 -e MINIO_ROOT_USER=zenos -e MINIO_ROOT_PASSWORD=zenos-secret minio/minio:latest
+
+# ZenOS
+git clone https://github.com/kongjie0325-art/ZenOS.git /opt/zenos
+cd /opt/zenos && python3 -m venv .venv
+.venv/bin/pip install -e ".[four-tier]"
+.venv/bin/pip install pytest pytest-asyncio
 
 # Run tests
+.venv/bin/python -m pytest zenos/tests/ -v
+
+# Run four-tier integration test
+.venv/bin/python zenos/memory/deploy_four_tier.py
+```
+
+### Development
+
+```bash
+pip install pyyaml
 PYTHONPATH=. python3 -m pytest tests/ -v
-
-# Run ZenOS
 python3 -m zenos
-
-# With custom config
-python3 -m zenos config/default.yaml
 ```
 
 ## Test Results
 
 ```
-Unit tests:   54 passed (test_core: 31, test_memory: 23)
-E2E tests:    6 passed (AdaptiveRouter, SelfHealing, MemoryGraph, AutoScaler, MemoryBridge, ConcreteAgent)
-Total:        60 tests, 100% pass rate
+Core unit tests:     31 passed (config, events, context, registry, state, plugin)
+Memory unit tests:   23 passed (working, episodic, semantic, procedural, compressor)
+Four-tier integration: 5/5 tiers passed (Redis, PG, Qdrant, MinIO, Manager)
+Total:               54 unit tests + integration tests, 100% pass rate
+```
+
+## Module Dependency Graph
+
+```
+                    ┌─────────────┐
+                    │   __main__  │
+                    └──────┬──────┘
+                           │
+                    ┌──────┴──────┐
+                    │     API     │
+                    └──────┬──────┘
+                           │
+         ┌─────────────────┼─────────────────┐
+         │                 │                 │
+    ┌────┴────┐      ┌────┴────┐      ┌────┴────┐
+    │  Agent   │      │  Tools  │      │  Memory │
+    └────┬────┘      └────┬────┘      └────┬────┘
+         │                │                │
+         └────────────────┼────────────────┘
+                          │
+                   ┌──────┴──────┐
+                   │ Integration │
+                   └──────┬──────┘
+                          │
+              ┌───────────┼───────────┐
+              │           │           │
+         ┌────┴────┐ ┌───┴────┐ ┌───┴────┐
+         │  Core   │ │ Infra  │ │Observ. │
+         └─────────┘ └────────┘ └────────┘
 ```
