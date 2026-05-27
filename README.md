@@ -282,6 +282,22 @@ Read Path:
 | `middleware/rate_limit.py` | `RateLimitMiddleware` | Rate limiting |
 | `middleware/logging.py` | `LoggingMiddleware` | Request logging |
 
+### Telegram Bot Layer (`telegram/`)
+| Module | Class | Purpose |
+|--------|-------|---------|
+| `bot.py` | `ZenOSBot` | TG bot with LLM streaming |
+| `.env.example` | — | Configuration template |
+| `zenos-tg-bot.service` | — | Systemd service file |
+
+**Bot Commands:** `/start`, `/help`, `/status`, `/model`
+
+**Features:**
+- Streaming LLM responses (edit message in real-time)
+- Auto-split long messages (4096 char Telegram limit)
+- User authorization via `TELEGRAM_ALLOWED_USERS`
+- System status reporting (CPU/memory/disk/ZenOS health)
+- Direct LongCat API integration with fallback support
+
 ## Event Flow Reference
 
 | Event Type | Publisher | Subscribers | Effect |
@@ -334,13 +350,24 @@ docker run -d --name zenos-minio -p 9000-9001:9000-9001 -e MINIO_ROOT_USER=zenos
 git clone https://github.com/kongjie0325-art/ZenOS.git /opt/zenos
 cd /opt/zenos && python3 -m venv .venv
 .venv/bin/pip install -e ".[four-tier]"
-.venv/bin/pip install pytest pytest-asyncio
+.venv/bin/pip install pytest pytest-asyncio python-telegram-bot[job-queue]
 
 # Run tests
 .venv/bin/python -m pytest zenos/tests/ -v
 
 # Run four-tier integration test
 .venv/bin/python zenos/memory/deploy_four_tier.py
+
+# Configure TG bot
+cp zenos/telegram/.env.example .env
+# Edit .env with your TELEGRAM_BOT_TOKEN and LLM_API_KEY
+
+# Start ZenOS API
+.venv/bin/uvicorn api.gateway.app:app --host 0.0.0.0 --port 8000 &
+
+# Start TG bot
+cp zenos/telegram/zenos-tg-bot.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now zenos-tg-bot
 ```
 
 ### Development
@@ -357,7 +384,19 @@ python3 -m zenos
 Core unit tests:     31 passed (config, events, context, registry, state, plugin)
 Memory unit tests:   23 passed (working, episodic, semantic, procedural, compressor)
 Four-tier integration: 5/5 tiers passed (Redis, PG, Qdrant, MinIO, Manager)
+TG bot:              deployed and running on aote-hk-cn2 (@aote_cn2_my_bot)
 Total:               54 unit tests + integration tests, 100% pass rate
+```
+
+## Production Deployment (aote-hk-cn2)
+
+```
+VPS:        103.149.93.192 (Hong Kong CN2)
+OS:         Debian 12, 4-core Xeon Gold 6133, 3.8GB RAM, 30GB SSD
+Bot:        @aote_cn2_my_bot (python-telegram-bot + LongCat LLM)
+API:        ZenOS FastAPI on :8000
+Memory:     Redis + PostgreSQL + Qdrant + MinIO (all Docker)
+Monitoring: Nezha Agent → nezha.zent.de5.net:5555
 ```
 
 ## Module Dependency Graph
