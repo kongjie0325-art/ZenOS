@@ -11,7 +11,7 @@ class TestConfig:
     """Test configuration management."""
 
     def test_default_config(self):
-        from core.config import Config
+        from zenos.core.config import Config
         config = Config()
         assert config.server.host == "0.0.0.0"
         assert config.server.port == 8000
@@ -19,7 +19,7 @@ class TestConfig:
         assert config.agent.model == "gpt-4o"
 
     def test_config_from_dict(self):
-        from core.config import Config
+        from zenos.core.config import Config
         config = Config.from_dict({
             'server': {'port': 9000},
             'memory': {'backend': 'redis'},
@@ -28,14 +28,14 @@ class TestConfig:
         assert config.memory.backend == "redis"
 
     def test_config_get_set(self):
-        from core.config import Config
+        from zenos.core.config import Config
         config = Config()
         assert config.get('server.port') == 8000
         config.set('server.port', 9090)
         assert config.server.port == 9090
 
     def test_config_save_load(self):
-        from core.config import Config
+        from zenos.core.config import Config
         config = Config()
         config.server.port = 7777
         with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
@@ -48,7 +48,7 @@ class TestConfig:
             os.unlink(path)
 
     def test_config_change_listener(self):
-        from core.config import Config
+        from zenos.core.config import Config
         config = Config()
         changes = []
         config.on_change(lambda k, v: changes.append((k, v)))
@@ -62,7 +62,7 @@ class TestEventBus:
 
     @pytest.mark.asyncio
     async def test_subscribe_publish(self):
-        from core.events import EventBus, Event, EventType
+        from zenos.core.events import EventBus, Event, EventType
         bus = EventBus()
         await bus.start()
         received = []
@@ -75,7 +75,7 @@ class TestEventBus:
 
     @pytest.mark.asyncio
     async def test_publish_and_wait(self):
-        from core.events import EventBus, Event, EventType
+        from zenos.core.events import EventBus, Event, EventType
         bus = EventBus()
         results = []
 
@@ -89,7 +89,7 @@ class TestEventBus:
         assert res[0] == "ok"
 
     def test_event_history(self):
-        from core.events import EventBus, Event, EventType
+        from zenos.core.events import EventBus, Event, EventType
         bus = EventBus()
         # Manually add to history
         for i in range(5):
@@ -98,7 +98,7 @@ class TestEventBus:
         assert len(history) == 3
 
     def test_event_with_priority(self):
-        from core.events import Event, EventType
+        from zenos.core.events import Event, EventType
         e = Event(type=EventType.SYSTEM_ERROR, data={}, priority=10)
         assert e.priority == 10
         assert e.id != ""
@@ -108,14 +108,14 @@ class TestContext:
     """Test context management."""
 
     def test_create_context(self):
-        from core.context import ContextManager
+        from zenos.core.context import ContextManager
         cm = ContextManager()
         ctx = cm.create(session_id="sess-1", token_budget=64000)
         assert ctx.session_id == "sess-1"
         assert ctx.token_budget == 64000
 
     def test_add_messages(self):
-        from core.context import Context, ContextManager
+        from zenos.core.context import Context, ContextManager
         ctx = Context()
         ctx.add_message("system", "You are a helpful assistant.")
         ctx.add_message("user", "Hello!")
@@ -124,7 +124,7 @@ class TestContext:
         assert ctx.token_used > 0
 
     def test_context_compression(self):
-        from core.context import Context
+        from zenos.core.context import Context
         ctx = Context(token_budget=1000)
         for i in range(20):
             ctx.add_message("user", f"Message {i} " * 10)
@@ -133,14 +133,14 @@ class TestContext:
         assert ctx.is_compressed
 
     def test_should_compress(self):
-        from core.context import Context
+        from zenos.core.context import Context
         ctx = Context(token_budget=100)
         ctx.token_used = 85
         assert ctx.should_compress(threshold=0.8)
         assert not ctx.should_compress(threshold=0.9)
 
     def test_context_manager_lru(self):
-        from core.context import ContextManager
+        from zenos.core.context import ContextManager
         cm = ContextManager(max_contexts=3)
         c1 = cm.create()
         c2 = cm.create()
@@ -150,7 +150,7 @@ class TestContext:
         assert cm.get(c1.id) is None  # evicted
 
     def test_context_by_session(self):
-        from core.context import ContextManager
+        from zenos.core.context import ContextManager
         cm = ContextManager()
         cm.create(session_id="s1")
         cm.create(session_id="s1")
@@ -163,20 +163,20 @@ class TestRegistry:
     """Test service registry."""
 
     def test_register_get(self):
-        from core.registry import Registry
+        from zenos.core.registry import Registry
         reg = Registry()
         reg.register("service_a", {"key": "value"})
         assert reg.get("service_a") == {"key": "value"}
 
     def test_factory(self):
-        from core.registry import Registry
+        from zenos.core.registry import Registry
         reg = Registry()
         reg.register_factory("counter", lambda: {"count": 0})
         result = reg.get("counter")
         assert result == {"count": 0}
 
     def test_singleton(self):
-        from core.registry import Registry
+        from zenos.core.registry import Registry
         reg = Registry()
         reg.register_factory("obj", lambda: {"id": id(object())}, singleton=True)
         a = reg.get("obj")
@@ -184,7 +184,7 @@ class TestRegistry:
         assert a is b
 
     def test_non_singleton(self):
-        from core.registry import Registry
+        from zenos.core.registry import Registry
         reg = Registry()
         reg.register_factory("obj", lambda: {"id": id(object())}, singleton=False)
         a = reg.get("obj")
@@ -192,13 +192,13 @@ class TestRegistry:
         assert a is not b
 
     def test_missing_service(self):
-        from core.registry import Registry
+        from zenos.core.registry import Registry
         reg = Registry()
         with pytest.raises(KeyError):
             reg.get("nonexistent")
 
     def test_resolve_by_type(self):
-        from core.registry import Registry
+        from zenos.core.registry import Registry
         reg = Registry()
         reg.register("my_dict", {"key": "val"})
         result = reg.resolve(dict)
@@ -209,24 +209,24 @@ class TestStateManager:
     """Test state machine."""
 
     def test_initial_state(self):
-        from core.state import StateManager, SystemState
+        from zenos.core.state import StateManager, SystemState
         sm = StateManager()
         assert sm.state == SystemState.INITIALIZING
 
     def test_valid_transition(self):
-        from core.state import StateManager, SystemState
+        from zenos.core.state import StateManager, SystemState
         sm = StateManager()
         assert sm.transition(SystemState.READY) is True
         assert sm.state == SystemState.READY
 
     def test_invalid_transition(self):
-        from core.state import StateManager, SystemState
+        from zenos.core.state import StateManager, SystemState
         sm = StateManager()
         assert sm.transition(SystemState.RUNNING) is False
         assert sm.state == SystemState.INITIALIZING
 
     def test_transition_listener(self):
-        from core.state import StateManager, SystemState
+        from zenos.core.state import StateManager, SystemState
         sm = StateManager()
         transitions = []
         sm.on_transition(lambda old, new, meta: transitions.append((old, new)))
@@ -235,7 +235,7 @@ class TestStateManager:
         assert len(transitions) == 2
 
     def test_snapshot(self):
-        from core.state import StateManager, SystemState
+        from zenos.core.state import StateManager, SystemState
         sm = StateManager()
         sm.set_data("key", "value")
         snap = sm.snapshot()
@@ -243,7 +243,7 @@ class TestStateManager:
         assert snap.metadata.get("key") == "value"
 
     def test_save_load_snapshot(self):
-        from core.state import StateManager, SystemState
+        from zenos.core.state import StateManager, SystemState
         sm = StateManager()
         sm.transition(SystemState.READY)
         sm.set_data("test", 42)
@@ -263,7 +263,7 @@ class TestPluginManager:
     """Test plugin system."""
 
     def test_register_plugin(self):
-        from core.plugin import PluginManager, Plugin, PluginType, PluginInfo
+        from zenos.core.plugin import PluginManager, Plugin, PluginType, PluginInfo
 
         class MyPlugin(Plugin):
             info = PluginInfo(name="test", version="0.1.0", description="Test",
@@ -276,7 +276,7 @@ class TestPluginManager:
         assert pm.get("test") is not None
 
     def test_get_by_type(self):
-        from core.plugin import PluginManager, Plugin, PluginType, PluginInfo
+        from zenos.core.plugin import PluginManager, Plugin, PluginType, PluginInfo
 
         class ToolPlugin(Plugin):
             info = PluginInfo(name="tool1", version="0.1.0", description="",
@@ -290,7 +290,7 @@ class TestPluginManager:
         assert len(tools) == 1
 
     def test_hooks(self):
-        from core.plugin import PluginManager
+        from zenos.core.plugin import PluginManager
         pm = PluginManager()
         results = []
         pm.register_hook("test_event", lambda **kw: results.append(kw))
@@ -298,7 +298,7 @@ class TestPluginManager:
         assert "test_event" in pm._hooks
 
     def test_list_plugins(self):
-        from core.plugin import PluginManager, Plugin, PluginType, PluginInfo
+        from zenos.core.plugin import PluginManager, Plugin, PluginType, PluginInfo
 
         class P(Plugin):
             info = PluginInfo(name="p1", version="1.0", description="Test",

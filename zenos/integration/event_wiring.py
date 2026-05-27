@@ -46,7 +46,7 @@ class EventWiring:
         if self._wired:
             return
 
-        from core.events import EventType as ET
+        from zenos.core.events import EventType as ET
 
         # ── All events → Metrics ──────────────────────────────────
         if self._metrics is not None:

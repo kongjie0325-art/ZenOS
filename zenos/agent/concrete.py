@@ -54,7 +54,7 @@ class ConcreteAgent(BaseAgent):
         if self._event_bus is None:
             return
         try:
-            from core.events import Event, EventType
+            from zenos.core.events import Event, EventType
             try:
                 et = EventType(event_type)
             except ValueError:
@@ -221,7 +221,7 @@ class ConcreteAgent(BaseAgent):
         # Write to episodic memory
         if self._episodic_memory is not None:
             try:
-                from memory.episodic import Episode
+                from zenos.memory.episodic import Episode
                 self._episodic_memory.add_episode(
                     Episode(
                         content=f"[{action_result.tool_name}] {observation}",

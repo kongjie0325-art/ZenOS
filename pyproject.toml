@@ -24,4 +24,9 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
+where = ["."]
 include = ["zenos*"]
+exclude = ["zenos.tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["zenos/tests"]

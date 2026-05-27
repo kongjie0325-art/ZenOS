@@ -53,7 +53,7 @@ class MemoryBridge:
         if self.event_bus is None:
             return
         try:
-            from core.events import Event, EventType
+            from zenos.core.events import Event, EventType
             try:
                 et = EventType(event_type)
             except ValueError:
@@ -119,7 +119,7 @@ class MemoryBridge:
             # Load episodic memory
             ep_file = dir_path / "episodic.json"
             if ep_file.exists() and self.episodic is not None:
-                from memory.episodic import Episode
+                from zenos.memory.episodic import Episode
                 episodes = json.loads(ep_file.read_text())
                 for ep_data in episodes:
                     try:
@@ -135,7 +135,7 @@ class MemoryBridge:
             # Load semantic memory
             sem_file = dir_path / "semantic.json"
             if sem_file.exists() and self.semantic is not None:
-                from memory.semantic import Knowledge
+                from zenos.memory.semantic import Knowledge
                 items = json.loads(sem_file.read_text())
                 for k_data in items:
                     try:
@@ -251,7 +251,7 @@ class MemoryBridge:
         if self.retriever is None:
             return []
         try:
-            from memory.retrieval import RetrievalStrategy
+            from zenos.memory.retrieval import RetrievalStrategy
             results = self.retriever.retrieve(content, strategy=RetrievalStrategy.HYBRID, limit=limit)
             return [
                 {'id': r.item_id, 'content': r.content, 'score': r.score, 'source': r.source}

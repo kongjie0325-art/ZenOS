@@ -153,7 +153,7 @@ class AutoScaler:
 
     async def _emit_scaling_event(self, event: ScalingEvent) -> None:
         try:
-            from core.events import Event, EventType
+            from zenos.core.events import Event, EventType
             await self._event_bus.publish(Event(
                 type=EventType.SYSTEM_HEALTH,
                 data={

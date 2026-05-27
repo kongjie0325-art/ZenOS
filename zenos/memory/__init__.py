@@ -10,16 +10,16 @@ Four-Tier (production, distributed):
 """
 
 # Three-Tier (existing, in-memory)
-from memory.working import WorkingMemory, WorkingMemoryEntry
-from memory.episodic import EpisodicMemory, Episode
-from memory.semantic import SemanticMemory, Knowledge
-from memory.procedural import ProceduralMemory, Skill
-from memory.compression import CompressionStrategy, CompressionConfig, CompressionReport
-from memory.retrieval import RetrievalStrategy, RetrievalResult, MemoryRetriever
-from memory.memory_graph import MemoryGraph, GraphNode, GraphEdge
+from zenos.memory.working import WorkingMemory, WorkingMemoryEntry
+from zenos.memory.episodic import EpisodicMemory, Episode
+from zenos.memory.semantic import SemanticMemory, Knowledge
+from zenos.memory.procedural import ProceduralMemory, Skill
+from zenos.memory.compression import CompressionStrategy, CompressionConfig, CompressionReport
+from zenos.memory.retrieval import RetrievalStrategy, RetrievalResult, MemoryRetriever
+from zenos.memory.memory_graph import MemoryGraph, GraphNode, GraphEdge
 
 # Four-Tier (production, distributed)
-from memory.four_tier import (
+from zenos.memory.four_tier import (
     RedisWorkingMemory,
     PostgreEpisodicMemory,
     QdrantSemanticMemory,
