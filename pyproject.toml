@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zenos"
+version = "0.1.0"
+description = "ZenOS — AI Operating System with hierarchical memory, adaptive routing, and self-healing"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+four-tier = [
+    "redis>=5.0",
+    "psycopg2-binary>=2.9",
+    "qdrant-client>=1.7",
+    "boto3>=1.28",
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+]
+
+[tool.setuptools.packages.find]
+include = ["zenos*"]
